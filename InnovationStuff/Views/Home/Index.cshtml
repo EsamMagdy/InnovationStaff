@@ -1,0 +1,215 @@
+﻿@model InnovationStuff.Core.ViewModel.StudentsCourses
+@{
+    ViewBag.Title = "Home Page";
+}
+
+<div class="row">
+    <div class="col-xs-4">
+        <table id="students" class="table table-bordered table-hover">
+            <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Age</th>
+                    <th>Course</th>
+                </tr>
+            </thead>
+            <tbody id="studentBody">
+               
+            </tbody>
+        </table>
+
+
+        <!-- Modal -->
+        <div class="modal fade" data-backdrop="static" data-keyboard="false" id="studentDetails" tabindex="-1" role="dialog" aria-labelledby="studentDetailsTitle" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="exampleModalLongTitle">Details Of Student</h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body text-center">
+                        <input type="hidden" id="studentId" />
+                        <div class="row">
+                            <label class="col-xs-3">Name</label>
+                            <label id="studentName" class="col-xs-3"></label>
+                        </div>
+                        <div class="row">
+                            <label class="col-xs-3">Age</label>
+                            <label id="studentAge" class="col-xs-3"></label>
+                        </div>
+                        <div class="row">
+                            <label class="col-xs-3">Courses</label>
+                            @Html.DropDownListFor(s => s.CourseId, new SelectList(Model.Courses, "Id", "Name"), "Select Course", new { @class = "form-control col-xs-3" })
+                        </div>
+                        <div class=""></div>
+                        <div class="row">
+                            <ul id="studnetCourses" class="list-inline"></ul>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-primary js-save-changes">Save changes</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+@section scripts{
+    <script>
+
+        $(document).ready(function () {
+            let courses = [];
+            let studentId;
+
+
+            let table = $("#students").DataTable({
+                ajax: {
+                    url: "/api/Students",
+                    dataSrc: ""
+                },
+                columns: [
+                    {
+                        data: "name",
+                        render: function (data, type, student) {
+                            return '<a href="#" class="btn-link js-details" data-student-id="' + student.id + '">' + student.name + '</a>';
+                        }
+                    },
+                    {
+                        data: "age"
+                    },
+                    {
+                        render: function (data, type, student) {
+                            if (student.courses.length === 0)
+                                return '<label class="label-danger">No Courses</label>';
+
+                            let lblCourses = '';
+                            for (let course of student.courses) {
+                                lblCourses += '<label data-student-id="' + student.id + '" data-course-id="' + course.id + '">' + course.name + '</label> ';
+                            }
+                            return lblCourses;
+                        }
+                    }
+                ]
+            });
+
+            // show details in modal when click on student's name
+            $('#studentBody').on('click', '.js-details', function (e) {
+                studentId = parseInt($(e.target).attr('data-student-id'));
+                $.ajax({
+                    url: "/api/students/" + studentId + "",
+                    method: "GET"
+                })
+                    .done(addDetailsInModal)
+                    .fail(fail);
+            });
+
+            // add course to courses list when choose it from dropdown list 
+            $('#CourseId').change(function (e) {
+
+                let courseText = $(e.target).find(":selected").text();
+                let courseIdSelected = parseInt($(e.target).val());
+
+                if (!courseIdSelected) {
+                    toastr.error("Please Select Course");
+                    return;
+                }
+
+                for (let item of courses) {
+                    if (item.id === courseIdSelected) {
+                        toastr.error("The Course Exist");
+                        return;
+                    }
+                }
+
+                addCourses(courseIdSelected, courseText);
+
+            });
+
+            // remove course from courses list when click on 'X' button
+            $('#studnetCourses').on('click', 'button', function (e) {
+                let listItem = $(e.target).parents('li');
+                let courseId = parseInt($(e.target).attr('data-course-id'));
+
+
+                $(listItem).hide('slow', function () { $(this).remove(); });
+
+                courses.forEach((value, index) => {
+                    if (value.id === courseId) courses.splice(index, 1);
+                });
+            });
+
+            // save changes in database when click on Save button
+            $('.js-save-changes').click(function () {
+
+                $.ajax({
+                    url: "/api/courses",
+                    method: "Post",
+                    data: { studentId, courses },
+                })
+                    .done(function () {
+
+                        let courseCell = $("a[data-student-id='" + studentId + "']")
+                            .parents('tr')
+                            .find('td:eq(2)');
+
+                        let cellLabel = $(courseCell).find('label');
+
+                        toastr.success("Courses successfully records.");
+                        $('#studentDetails').modal('hide');
+
+                        if (courses.length === 0) {
+                            cellLabel.remove();
+                            courseCell.append('<label class="label-danger">No Courses</label>')
+                                .hide().fadeIn('slow');
+                            return;
+                        }
+
+                        if (cellLabel.hasClass('label-danger')) {
+                            cellLabel.hide('slow').remove();
+                        }
+                        courses.forEach(function (value) {
+
+                            cellLabel.remove();
+                            courseCell.append('<label data-student-id="' + studentId + '" data-course-id="' + value.id + '">' + value.name + '&nbsp;</label>')
+                                .hide().fadeIn('slow');
+                        });
+
+
+                    })
+                    .fail(fail);
+
+            });
+
+            // simple function to add details of student in modal 
+            let addDetailsInModal = function (student) {
+                $('#studentDetails').modal('show');
+                $('#CourseId').val('');
+                $('#studentId').val(student.id);
+                $('#studentName').html(student.name);
+                $('#studentAge').html(student.age);
+                $("#studnetCourses").empty();
+                courses.length = 0;
+                $.each(student.courses, function (key, value) {
+                    addCourses(value.id, value.name);
+                });
+            };
+
+            // simple function to add/remove courses to/from courses list
+            let addCourses = function (id, name) {
+                courses.push({ id: id, name: name });
+
+                $('<li class="list-group-item">' + name + ' |<button class="btn-link js-delete-course"  data-student-id=' + studentId + ' data-course-id=' + id + ' >X</button></li>')
+                    .appendTo("#studnetCourses").hide().fadeIn('slow');
+            };
+
+            // simple function to show error alert when exceptions happen
+            let fail = function () {
+                toastr.error("Something unexpected happened.");
+            };
+        });
+
+    </script>
+}
